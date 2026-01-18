@@ -8,10 +8,50 @@ from datetime import datetime, timezone
 from pathlib import Path
 import time
 import uuid
+import threading
 from typing import List, Dict, Optional
 
 
 def run(cmd: List[str], cwd: Path, env: Dict[str, str]) -> str:
+    stream_output = env.get("CI") == "true" or env.get("GITHUB_ACTIONS") == "true"
+    if stream_output:
+        p = subprocess.Popen(
+            cmd,
+            cwd=str(cwd),
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+
+        stderr_lines: List[str] = []
+
+        def drain_stderr() -> None:
+            assert p.stderr is not None
+            for line in p.stderr:
+                stderr_lines.append(line)
+                sys.stderr.write(line)
+                sys.stderr.flush()
+
+        t = threading.Thread(target=drain_stderr)
+        t.start()
+
+        stdout = p.stdout.read() if p.stdout is not None else ""
+        p.wait()
+        t.join()
+
+        if p.returncode != 0:
+            sys.stderr.write(f"\n[run_icbc] command failed (rc={p.returncode}): {' '.join(cmd)}\n")
+            if stdout.strip():
+                sys.stderr.write("[run_icbc] --- stdout ---\n")
+                sys.stderr.write(stdout)
+                if not stdout.endswith("\n"):
+                    sys.stderr.write("\n")
+            raise SystemExit(p.returncode)
+
+        return stdout.strip()
+
     p = subprocess.run(
         cmd,
         cwd=str(cwd),
