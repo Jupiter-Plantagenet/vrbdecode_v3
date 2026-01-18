@@ -51,13 +51,16 @@ def run(cmd: List[str], cwd: Path, env: Dict[str, str]) -> str:
         hb.join()
 
         if p.returncode != 0:
-            sys.stderr.write(f"\n[run_icbc] command failed (rc={p.returncode}): {' '.join(cmd)}\n")
+            rc = p.returncode
+            if rc < 0:
+                rc = 128 + (-rc)
+            sys.stderr.write(f"\n[run_icbc] command failed (rc={rc}): {' '.join(cmd)}\n")
             if stdout.strip():
                 sys.stderr.write("[run_icbc] --- stdout ---\n")
                 sys.stderr.write(stdout)
                 if not stdout.endswith("\n"):
                     sys.stderr.write("\n")
-            raise SystemExit(p.returncode)
+            raise SystemExit(rc)
 
         return stdout.strip()
 
@@ -70,7 +73,10 @@ def run(cmd: List[str], cwd: Path, env: Dict[str, str]) -> str:
         text=True,
     )
     if p.returncode != 0:
-        sys.stderr.write(f"\n[run_icbc] command failed (rc={p.returncode}): {' '.join(cmd)}\n")
+        rc = p.returncode
+        if rc < 0:
+            rc = 128 + (-rc)
+        sys.stderr.write(f"\n[run_icbc] command failed (rc={rc}): {' '.join(cmd)}\n")
         if (p.stdout or "").strip():
             sys.stderr.write("[run_icbc] --- stdout ---\n")
             sys.stderr.write(p.stdout)
@@ -81,7 +87,7 @@ def run(cmd: List[str], cwd: Path, env: Dict[str, str]) -> str:
             sys.stderr.write(p.stderr)
             if not p.stderr.endswith("\n"):
                 sys.stderr.write("\n")
-        raise SystemExit(p.returncode)
+        raise SystemExit(rc)
 
     if (p.stderr or "").strip():
         sys.stderr.write(p.stderr)

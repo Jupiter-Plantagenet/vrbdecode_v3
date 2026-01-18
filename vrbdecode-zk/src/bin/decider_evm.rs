@@ -369,28 +369,44 @@ fn main() -> Result<(), Error> {
         let total_fold_time_s = fold_start.elapsed().as_secs_f64();
         let avg_step_time_s = total_fold_time_s / (n_steps as f64);
 
+        // Avoid cloning the full Nova state (can double peak memory in CI).
+        // Extract the values we need for verify/calldata, then move `nova` into `D::prove`.
+        let i = nova.i;
+        let z_0 = nova.z_0.clone();
+        let z_i = nova.z_i.clone();
+        let U_i = nova.U_i.clone();
+        let u_i = nova.u_i.clone();
+        let U_i_comm = U_i.get_commitments();
+        let u_i_comm = u_i.get_commitments();
+
+        if progress {
+            eprintln!("decider_prove start (K=64, N={})", n_steps);
+        }
         let start = Instant::now();
-        let proof = D::prove(&mut rng, decider_pp.clone(), nova.clone())?;
+        let proof = D::prove(&mut rng, decider_pp.clone(), nova)?;
         let decider_prove_time_s = start.elapsed().as_secs_f64();
+        if progress {
+            eprintln!("decider_prove done (K=64, N={})", n_steps);
+        }
 
         let verified = D::verify(
             decider_vp.clone(),
-            nova.i,
-            nova.z_0.clone(),
-            nova.z_i.clone(),
-            &nova.U_i.get_commitments(),
-            &nova.u_i.get_commitments(),
+            i,
+            z_0.clone(),
+            z_i.clone(),
+            &U_i_comm,
+            &u_i_comm,
             &proof,
         )?;
         assert!(verified);
 
         let calldata: Vec<u8> = prepare_calldata_for_nova_cyclefold_verifier(
             NovaVerificationMode::Explicit,
-            nova.i,
-            nova.z_0.clone(),
-            nova.z_i.clone(),
-            &nova.U_i,
-            &nova.u_i,
+            i,
+            z_0,
+            z_i,
+            &U_i,
+            &u_i,
             &proof,
         )?;
 
