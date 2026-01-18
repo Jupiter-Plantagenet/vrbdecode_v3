@@ -317,7 +317,9 @@ fn main() -> Result<(), Error> {
     let nova_preprocess_params = PreprocessorParam::new(poseidon_config, f_circuit.clone());
     let nova_params = N::preprocess(&mut rng, &nova_preprocess_params)?;
 
-    let (decider_pp, decider_vp) = D::preprocess(&mut rng, (nova_params.clone(), f_circuit.state_len()))?;
+    let (decider_pp, decider_vp) =
+        D::preprocess(&mut rng, (nova_params.clone(), f_circuit.state_len()))?;
+    let mut decider_pp_opt = Some(decider_pp);
 
     let request_id_lo = Fr::from(0u64);
     let request_id_hi = Fr::from(0u64);
@@ -383,7 +385,14 @@ fn main() -> Result<(), Error> {
             eprintln!("decider_prove start (K=64, N={})", n_steps);
         }
         let start = Instant::now();
-        let proof = D::prove(&mut rng, decider_pp.clone(), nova)?;
+        // Cloning the Groth16 proving params can cause a large peak in memory.
+        // In CI we run a single N (e.g. --steps 32), so we can move `decider_pp` instead.
+        let decider_pp_for_prove = if step_counts.len() == 1 {
+            decider_pp_opt.take().expect("decider_pp")
+        } else {
+            decider_pp_opt.as_ref().expect("decider_pp").clone()
+        };
+        let proof = D::prove(&mut rng, decider_pp_for_prove, nova)?;
         let decider_prove_time_s = start.elapsed().as_secs_f64();
         if progress {
             eprintln!("decider_prove done (K=64, N={})", n_steps);
