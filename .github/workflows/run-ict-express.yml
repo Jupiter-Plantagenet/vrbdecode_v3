@@ -1,0 +1,117 @@
+name: Run ICT Express Benchmarks
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      reps:
+        description: 'Repetitions per (K,N) point (more stable averages)'
+        required: false
+        default: '3'
+        type: string
+      ks:
+        description: 'Comma-separated K values'
+        required: false
+        default: '16,32,64'
+        type: string
+      ns:
+        description: 'Comma-separated N values'
+        required: false
+        default: '32,64,128,256'
+        type: string
+
+jobs:
+  run-ict-express:
+    runs-on: ubuntu-latest
+
+    env:
+      ICT_REPS: '3'
+      ICT_KS: '16,32,64'
+      ICT_NS: '32,64,128,256'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup swap (mitigate OOM)
+      run: |
+        sudo fallocate -l 4G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=4096
+        sudo chmod 600 /swapfile
+        sudo mkswap /swapfile
+        sudo swapon /swapfile
+        free -h
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Apply workflow_dispatch inputs
+      if: github.event_name == 'workflow_dispatch'
+      run: |
+        echo "ICT_REPS=${{ inputs.reps }}" >> "$GITHUB_ENV"
+        echo "ICT_KS=${{ inputs.ks }}" >> "$GITHUB_ENV"
+        echo "ICT_NS=${{ inputs.ns }}" >> "$GITHUB_ENV"
+
+    - name: Cache cargo registry
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Run ICT Express evaluation
+      env:
+        RUST_BACKTRACE: '1'
+        RAYON_NUM_THREADS: '1'
+        CARGO_BUILD_JOBS: '1'
+      run: |
+        python eval/run_ict_express.py \
+          --reps "$ICT_REPS" \
+          --ks "$ICT_KS" \
+          --ns "$ICT_NS"
+
+    - name: Diagnostics
+      if: always()
+      run: |
+        {
+          echo "== free -h =="
+          free -h
+          echo "== dmesg tail =="
+          sudo dmesg | tail -n 200 || true
+        } | tee "$GITHUB_WORKSPACE/ci_diagnostics_ict_express.txt"
+
+        if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+          {
+            echo "## ICT Express Artifacts"
+            echo "- eval/ict_express.json"
+            echo "- eval/ict_express_step.csv"
+            echo "- eval/ict_express_nova.csv"
+            echo ""
+            echo "## Diagnostics"
+            echo "\`\`\`"
+            cat "$GITHUB_WORKSPACE/ci_diagnostics_ict_express.txt"
+            echo "\`\`\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+    - name: Upload artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ict-express-artifacts
+        path: |
+          ci_diagnostics_ict_express.txt
+          eval/ict_express.json
+          eval/ict_express_step.csv
+          eval/ict_express_nova.csv
+        if-no-files-found: error
+        retention-days: 30

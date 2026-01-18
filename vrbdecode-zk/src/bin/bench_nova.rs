@@ -19,14 +19,33 @@ use serde::Serialize;
 
 use vrbdecode_zk::{StepExternalInputs, StepFCircuit};
 
-type N = Nova<
+type NovaK<const K: usize> = Nova<
     Projective,
     Projective2,
-    StepFCircuit<16>,
+    StepFCircuit<K>,
     KZG<'static, Bn254>,
     Pedersen<Projective2>,
     false,
 >;
+
+fn proc_status_kb(key: &str) -> Option<u64> {
+    if !cfg!(target_os = "linux") {
+        return None;
+    }
+    let s = std::fs::read_to_string("/proc/self/status").ok()?;
+    for line in s.lines() {
+        if let Some(rest) = line.strip_prefix(key) {
+            let v = rest
+                .split_whitespace()
+                .next()
+                .and_then(|t| t.parse::<u64>().ok());
+            if v.is_some() {
+                return v;
+            }
+        }
+    }
+    None
+}
 
 fn poseidon_params_bn254_rate8() -> PoseidonConfig<Fr> {
     let rate = 8usize;
@@ -224,17 +243,25 @@ fn vectors_k16() -> Vec<Vector> {
     rows.into_iter().filter(|v| v.k == 16).collect()
 }
 
-fn mk_external_inputs(
+fn vectors_k<const K: usize>() -> Vec<Vector> {
+    let root = workspace_root().join("vectors");
+    let mut rows: Vec<Vector> = Vec::new();
+    rows.extend(load_jsonl(&root.join("golden.jsonl")));
+    rows.extend(load_jsonl(&root.join("random.jsonl")));
+    rows.into_iter().filter(|v| v.k == K).collect()
+}
+
+fn mk_external_inputs<const K: usize>(
     row: &Vector, request_id_lo: Fr, request_id_hi: Fr, policy_hash_lo: Fr, policy_hash_hi: Fr,
     seed_commit_lo: Fr, seed_commit_hi: Fr, step_idx: u32, h_prev: Fr,
-) -> StepExternalInputs<16> {
+) -> StepExternalInputs<K> {
     let u_t = prf_u_t(request_id_lo, request_id_hi, policy_hash_lo, policy_hash_hi, seed_commit_lo, seed_commit_hi, step_idx);
-    let (y, ws, r) = decode_step_native(16, row.top_k, row.top_p_q16, row.t_q16, &row.token_id, &row.logit_q16, u_t);
+    let (y, ws, r) = decode_step_native(K, row.top_k, row.top_p_q16, row.t_q16, &row.token_id, &row.logit_q16, u_t);
     let lo = ((u_t as u128) * (ws as u128)) as u64;
-    let cand_hash = candidate_hash::<16>(&row.token_id, &row.logit_q16, row.t_q16);
+    let cand_hash = candidate_hash::<K>(&row.token_id, &row.logit_q16, row.t_q16);
     let h_new = receipt_update(h_prev, request_id_lo, request_id_hi, policy_hash_lo, policy_hash_hi, seed_commit_lo, seed_commit_hi, step_idx, cand_hash, y, ws, r);
-    let token_id: [u32; 16] = row.token_id.clone().try_into().unwrap();
-    let logit_q16: [i32; 16] = row.logit_q16.clone().try_into().unwrap();
+    let token_id: [u32; K] = row.token_id.clone().try_into().unwrap();
+    let logit_q16: [i32; K] = row.logit_q16.clone().try_into().unwrap();
     StepExternalInputs { top_k: row.top_k as u32, top_p_q16: row.top_p_q16, t_q16: row.t_q16, token_id, logit_q16, expected_y: y, expected_ws: ws, expected_r: r, expected_lo: lo, h_new }
 }
 
@@ -245,6 +272,7 @@ struct BenchRow {
     total_fold_time_s: f64,
     proof_size_bytes: usize,
     verify_time_s: f64,
+    peak_rss_kb: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -253,17 +281,17 @@ struct BenchOutput {
     results: Vec<BenchRow>,
 }
 
-fn bench_nova_n(
+fn bench_nova_n<const K: usize>(
     num_steps: usize,
     params: &(
-        <N as FoldingScheme<Projective, Projective2, StepFCircuit<16>>>::ProverParam,
-        <N as FoldingScheme<Projective, Projective2, StepFCircuit<16>>>::VerifierParam,
+        <NovaK<K> as FoldingScheme<Projective, Projective2, StepFCircuit<K>>>::ProverParam,
+        <NovaK<K> as FoldingScheme<Projective, Projective2, StepFCircuit<K>>>::VerifierParam,
     ),
     vectors: &[Vector],
     verbose: bool,
     progress: bool,
 ) -> Result<BenchRow, folding_schemes::Error> {
-    assert!(vectors.len() >= num_steps, "Need {} K=16 vectors", num_steps);
+    assert!(vectors.len() >= num_steps, "Need {} K={} vectors", num_steps, K);
 
     let request_id_lo = Fr::from(0u64);
     let request_id_hi = Fr::from(0u64);
@@ -274,18 +302,18 @@ fn bench_nova_n(
 
     let initial_state = vec![request_id_lo, request_id_hi, policy_hash_lo, policy_hash_hi, seed_commit_lo, seed_commit_hi, Fr::from(0u64)];
 
-    let f_circuit = StepFCircuit::<16>::new_default()?;
+    let f_circuit = StepFCircuit::<K>::new_default()?;
 
-    let mut ext_inputs: Vec<StepExternalInputs<16>> = Vec::with_capacity(num_steps);
+    let mut ext_inputs: Vec<StepExternalInputs<K>> = Vec::with_capacity(num_steps);
     let mut h_prev = Fr::from(0u64);
     for (step_idx, row) in vectors.iter().take(num_steps).enumerate() {
-        let ext = mk_external_inputs(row, request_id_lo, request_id_hi, policy_hash_lo, policy_hash_hi, seed_commit_lo, seed_commit_hi, step_idx as u32, h_prev);
+        let ext = mk_external_inputs::<K>(row, request_id_lo, request_id_hi, policy_hash_lo, policy_hash_hi, seed_commit_lo, seed_commit_hi, step_idx as u32, h_prev);
         h_prev = ext.h_new;
         ext_inputs.push(ext);
     }
 
     let mut rng = StdRng::seed_from_u64(123456789u64 + num_steps as u64);
-    let mut folding = N::init(params, f_circuit, initial_state)?;
+    let mut folding = NovaK::<K>::init(params, f_circuit, initial_state)?;
 
     if verbose {
         println!("  Folding {} steps...", num_steps);
@@ -312,8 +340,9 @@ fn bench_nova_n(
         eprintln!("Verifying...");
     }
     let verify_start = Instant::now();
-    N::verify(params.1.clone(), proof)?;
+    NovaK::<K>::verify(params.1.clone(), proof)?;
     let verify_time = verify_start.elapsed().as_secs_f64();
+    let peak_rss_kb = proc_status_kb("VmHWM:");
 
     Ok(BenchRow {
         n_steps: num_steps,
@@ -321,42 +350,24 @@ fn bench_nova_n(
         total_fold_time_s: total_fold_time,
         proof_size_bytes: proof_size,
         verify_time_s: verify_time,
+        peak_rss_kb,
     })
 }
 
-fn main() {
-    let json_only = std::env::args().any(|a| a == "--json");
-    let progress = std::env::args().any(|a| a == "--progress")
-        || std::env::var("VRBDECODE_BENCH_PROGRESS").is_ok();
+fn run_for_k<const K: usize>(step_counts: Vec<usize>, json_only: bool, progress: bool) {
     let verbose = !json_only;
 
     if verbose {
-        println!("=== VRBDecode Nova Folding Benchmarks (K=16) ===\n");
+        println!("=== VRBDecode Nova Folding Benchmarks (K={}) ===\n", K);
     }
 
-    let mut step_counts: Vec<usize> = vec![32, 64, 128, 256];
-    let mut args = std::env::args().skip(1);
-    while let Some(a) = args.next() {
-        if a == "--steps" {
-            if let Some(v) = args.next() {
-                let parsed: Vec<usize> = v
-                    .split(',')
-                    .filter(|s| !s.trim().is_empty())
-                    .map(|s| s.trim().parse::<usize>().expect("parse steps"))
-                    .collect();
-                if !parsed.is_empty() {
-                    step_counts = parsed;
-                }
-            }
-        }
-    }
-
-    let vectors = vectors_k16();
+    let vectors = vectors_k::<K>();
     let max_n = *step_counts.iter().max().unwrap_or(&0);
     assert!(
         vectors.len() >= max_n,
-        "Need at least {} K=16 vectors (golden+random), found {}",
+        "Need at least {} K={} vectors (golden+random), found {}",
         max_n,
+        K,
         vectors.len()
     );
 
@@ -367,11 +378,11 @@ fn main() {
         eprintln!("Preprocessing (once)...");
     }
     let poseidon_config = poseidon_params_bn254_rate8();
-    let f_circuit = StepFCircuit::<16>::new_default().expect("fcircuit");
+    let f_circuit = StepFCircuit::<K>::new_default().expect("fcircuit");
     let mut rng = StdRng::seed_from_u64(123456789u64);
     let pp = PreprocessorParam::new(poseidon_config, f_circuit);
     let preprocess_start = Instant::now();
-    let params = N::preprocess(&mut rng, &pp).expect("preprocess");
+    let params = NovaK::<K>::preprocess(&mut rng, &pp).expect("preprocess");
     let preprocess_time_s = preprocess_start.elapsed().as_secs_f64();
 
     let mut results: Vec<BenchRow> = Vec::new();
@@ -391,7 +402,7 @@ fn main() {
         if progress {
             eprintln!("Benchmarking N={}...", n);
         }
-        let row = bench_nova_n(n, &params, &vectors, verbose, progress).expect("bench");
+        let row = bench_nova_n::<K>(n, &params, &vectors, verbose, progress).expect("bench");
         if verbose {
             println!(
                 "{:<8} {:>14.3} {:>14.3} {:>12} {:>14.4}",
@@ -414,4 +425,40 @@ fn main() {
     println!("\nPreprocess time: {:.2}s", preprocess_time_s);
     println!("\n=== Summary for Table 1 ===");
     println!("Run complete. See above for detailed metrics.");
+}
+
+fn main() {
+    let json_only = std::env::args().any(|a| a == "--json");
+    let progress = std::env::args().any(|a| a == "--progress")
+        || std::env::var("VRBDECODE_BENCH_PROGRESS").is_ok();
+    let mut k: usize = 16;
+
+    let mut step_counts: Vec<usize> = vec![32, 64, 128, 256];
+    let mut args = std::env::args().skip(1);
+    while let Some(a) = args.next() {
+        if a == "--k" {
+            if let Some(v) = args.next() {
+                k = v.parse::<usize>().expect("parse k");
+            }
+        }
+        if a == "--steps" {
+            if let Some(v) = args.next() {
+                let parsed: Vec<usize> = v
+                    .split(',')
+                    .filter(|s| !s.trim().is_empty())
+                    .map(|s| s.trim().parse::<usize>().expect("parse steps"))
+                    .collect();
+                if !parsed.is_empty() {
+                    step_counts = parsed;
+                }
+            }
+        }
+    }
+
+    match k {
+        16 => run_for_k::<16>(step_counts, json_only, progress),
+        32 => run_for_k::<32>(step_counts, json_only, progress),
+        64 => run_for_k::<64>(step_counts, json_only, progress),
+        _ => panic!("unsupported k"),
+    }
 }
