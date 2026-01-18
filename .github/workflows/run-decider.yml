@@ -64,10 +64,21 @@ jobs:
     - name: Diagnostics (on failure)
       if: always()
       run: |
-        echo "== free -h =="
-        free -h
-        echo "== dmesg tail =="
-        sudo dmesg | tail -n 200 || true
+        {
+          echo "== free -h =="
+          free -h
+          echo "== dmesg tail =="
+          sudo dmesg | tail -n 200 || true
+        } | tee "$GITHUB_WORKSPACE/ci_diagnostics.txt"
+
+        if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+          {
+            echo "## Diagnostics"
+            echo "\`\`\`"
+            cat "$GITHUB_WORKSPACE/ci_diagnostics.txt"
+            echo "\`\`\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+        fi
         
     - name: Upload artifacts
       if: always()
@@ -75,6 +86,7 @@ jobs:
       with:
         name: decider-artifacts
         path: |
+          ci_diagnostics.txt
           eval/icbc_decider_evm.json
           eval/icbc_decider_evm.csv
           eval/evm/*.sol
