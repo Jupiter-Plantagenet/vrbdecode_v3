@@ -17,6 +17,18 @@ def run(cmd: list[str], cwd: Path, env: dict[str, str]) -> str:
     return p.stdout.strip()
 
 
+def load_ict_express(eval_dir: Path) -> Tuple[List[Dict], Dict]:
+    p = eval_dir / "ict_express.json"
+    doc = json.loads(p.read_text(encoding="utf-8"))
+    step_rows = (doc.get("bench_step") or {}).get("rows") or []
+    nova_rows = (doc.get("bench_nova") or {}).get("rows") or []
+    nova_out = {
+        "preprocess_time_s": None,
+        "results": nova_rows,
+    }
+    return step_rows, nova_out
+
+
 def run_table1_with_retries(root: Path, nova_steps: Optional[str], max_attempts: int = 5) -> Tuple[List[Dict], Dict]:
     base_env = dict(os.environ)
     base_env["CARGO_INCREMENTAL"] = "0"
@@ -78,7 +90,15 @@ def main() -> int:
     if nova_steps is not None:
         nova_steps = nova_steps.strip() or None
 
-    step_rows, nova_out = run_table1_with_retries(root, nova_steps)
+    eval_dir = root / "eval"
+    use_ict = os.environ.get("VRBDECODE_TABLE1_FROM_ICT", "1").strip() != "0"
+    force_run = os.environ.get("VRBDECODE_TABLE1_FORCE_RUN", "0").strip() == "1"
+
+    ict_path = eval_dir / "ict_express.json"
+    if use_ict and (not force_run) and ict_path.exists():
+        step_rows, nova_out = load_ict_express(eval_dir)
+    else:
+        step_rows, nova_out = run_table1_with_retries(root, nova_steps)
 
     out = {
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -86,7 +106,6 @@ def main() -> int:
         "bench_nova": nova_out,
     }
 
-    eval_dir = root / "eval"
     json_path = eval_dir / "table1.json"
     json_path.write_text(json.dumps(out, indent=2), encoding="utf-8")
 
@@ -98,8 +117,11 @@ def main() -> int:
             "k",
             "step_circuit_constraints",
             "step_circuit_gen_time_s",
+            "step_circuit_gen_time_s_std",
             "step_fcircuit_constraints",
             "step_fcircuit_gen_time_s",
+            "step_fcircuit_gen_time_s_std",
+            "reps",
         ],
     )
 
@@ -107,7 +129,23 @@ def main() -> int:
     write_csv(
         nova_csv,
         nova_out.get("results", []),
-        ["n_steps", "avg_step_time_s", "total_fold_time_s", "proof_size_bytes", "verify_time_s"],
+        [
+            "k",
+            "n_steps",
+            "avg_step_time_s",
+            "avg_step_time_s_std",
+            "total_fold_time_s",
+            "total_fold_time_s_std",
+            "proof_size_bytes",
+            "proof_size_bytes_std",
+            "verify_time_s",
+            "verify_time_s_std",
+            "peak_rss_kb",
+            "peak_rss_kb_std",
+            "preprocess_time_s",
+            "preprocess_time_s_std",
+            "reps",
+        ],
     )
 
     print(str(json_path))
