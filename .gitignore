@@ -1,0 +1,46 @@
+# Research Artifacts
+*.pdf
+*.png
+*.csv
+*.json
+*.calldata
+*.sol
+!eval/run_icbc.py
+!vrbdecode-zk/**/*.rs
+!paper/**/*.tex
+!paper/**/*.bib
+
+# Rust
+target/
+target_*/
+Cargo.lock
+**/*.rs.bk
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Other
+*.log
+*.tmp
+capture_output.py
+debug_wsl.sh
+simple_run.sh
+sitecustomize.py
+

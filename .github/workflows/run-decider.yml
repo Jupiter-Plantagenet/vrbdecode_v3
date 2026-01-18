@@ -1,0 +1,56 @@
+name: Run Decider Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      steps:
+        description: 'Number of steps to run'
+        required: false
+        default: '32'
+        type: string
+
+jobs:
+  run-decider:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+        
+    - name: Cache cargo registry
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        
+    - name: Build decider_evm
+      run: |
+        cargo build --release --bin decider_evm
+        
+    - name: Install Python dependencies
+      run: |
+        pip install -r requirements.txt || true
+        
+    - name: Run decider pipeline
+      run: |
+        cd eval
+        python run_icbc.py --steps ${{ github.event.inputs.steps || '32' }}
+        
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: decider-artifacts
+        path: |
+          eval/icbc_decider_evm.json
+          eval/icbc_decider_evm.csv
+          eval/evm/nova_decider_k64_n32.sol
+          eval/evm/nova_decider_k64_n32.calldata
+        retention-days: 30

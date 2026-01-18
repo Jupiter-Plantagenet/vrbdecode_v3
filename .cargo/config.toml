@@ -1,0 +1,6 @@
+[build]
+# Mitigate intermittent Windows file-lock issues on build artifacts (os error 32)
+# by reducing churn and parallel deletions of `.rcgu.o` files.
+jobs = 1
+incremental = false
+rustflags = ["-C", "codegen-units=1"]
