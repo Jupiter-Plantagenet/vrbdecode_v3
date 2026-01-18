@@ -16,6 +16,14 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+
+    - name: Setup swap (mitigate OOM)
+      run: |
+        sudo fallocate -l 8G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=8192
+        sudo chmod 600 /swapfile
+        sudo mkswap /swapfile
+        sudo swapon /swapfile
+        free -h
       
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
@@ -33,7 +41,7 @@ jobs:
         
     - name: Build decider_evm
       run: |
-        cargo build --release --bin decider_evm
+        cargo build -j 1 --release --bin decider_evm
         
     - name: Install Python dependencies
       run: |
@@ -45,9 +53,19 @@ jobs:
         VRBDECODE_HEARTBEAT_S: "30"
         VRBDECODE_BENCH_PROGRESS: "1"
         RUST_BACKTRACE: "1"
+        RAYON_NUM_THREADS: "1"
+        CARGO_BUILD_JOBS: "1"
       run: |
         cd eval
         python run_icbc.py --steps ${{ github.event.inputs.steps || '32' }}
+
+    - name: Diagnostics (on failure)
+      if: failure()
+      run: |
+        echo "== free -h =="
+        free -h
+        echo "== dmesg tail =="
+        sudo dmesg | tail -n 200 || true
         
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
@@ -56,6 +74,6 @@ jobs:
         path: |
           eval/icbc_decider_evm.json
           eval/icbc_decider_evm.csv
-          eval/evm/nova_decider_k64_n32.sol
-          eval/evm/nova_decider_k64_n32.calldata
+          eval/evm/*.sol
+          eval/evm/*.calldata
         retention-days: 30
