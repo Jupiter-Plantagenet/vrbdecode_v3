@@ -40,6 +40,11 @@ jobs:
         pip install -r requirements.txt || true
         
     - name: Run decider pipeline
+      env:
+        VRBDECODE_DECIDER_BIN: ${{ github.workspace }}/target/release/decider_evm
+        VRBDECODE_HEARTBEAT_S: "30"
+        VRBDECODE_BENCH_PROGRESS: "1"
+        RUST_BACKTRACE: "1"
       run: |
         cd eval
         python run_icbc.py --steps ${{ github.event.inputs.steps || '32' }}

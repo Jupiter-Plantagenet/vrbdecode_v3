@@ -25,21 +25,30 @@ def run(cmd: List[str], cwd: Path, env: Dict[str, str]) -> str:
             bufsize=1,
         )
 
-        stderr_lines: List[str] = []
-
         def drain_stderr() -> None:
             assert p.stderr is not None
             for line in p.stderr:
-                stderr_lines.append(line)
                 sys.stderr.write(line)
                 sys.stderr.flush()
 
-        t = threading.Thread(target=drain_stderr)
+        heartbeat_interval_s = int(env.get("VRBDECODE_HEARTBEAT_S", "60"))
+        stop_event = threading.Event()
+
+        def heartbeat() -> None:
+            while not stop_event.wait(heartbeat_interval_s):
+                sys.stderr.write("[run_icbc] still running...\n")
+                sys.stderr.flush()
+
+        t = threading.Thread(target=drain_stderr, daemon=True)
+        hb = threading.Thread(target=heartbeat, daemon=True)
         t.start()
+        hb.start()
 
         stdout = p.stdout.read() if p.stdout is not None else ""
         p.wait()
+        stop_event.set()
         t.join()
+        hb.join()
 
         if p.returncode != 0:
             sys.stderr.write(f"\n[run_icbc] command failed (rc={p.returncode}): {' '.join(cmd)}\n")
@@ -91,16 +100,33 @@ def run_decider_with_retries(root: Path, steps: str, max_attempts: int = 5) -> L
     base_target = root / "target_eval_release"
     stable_target = base_target / "icbc_cache"
 
+    decider_bin_env = base_env.get("VRBDECODE_DECIDER_BIN", "").strip()
+    decider_bin: Optional[Path] = None
+    if decider_bin_env:
+        candidate = Path(decider_bin_env)
+        decider_bin = candidate if candidate.is_absolute() else (root / candidate)
+        if not decider_bin.exists():
+            raise SystemExit(f"VRBDECODE_DECIDER_BIN not found: {decider_bin}")
+
     last_err: Optional[BaseException] = None
     for attempt in range(1, max_attempts + 1):
         env = dict(base_env)
-        if attempt == 1:
-            env["CARGO_TARGET_DIR"] = str(stable_target)
-        else:
-            env["CARGO_TARGET_DIR"] = str(base_target / f"icbc_run_{attempt}_{uuid.uuid4().hex}")
+        if decider_bin is None:
+            if attempt == 1:
+                env["CARGO_TARGET_DIR"] = str(stable_target)
+            else:
+                env["CARGO_TARGET_DIR"] = str(base_target / f"icbc_run_{attempt}_{uuid.uuid4().hex}")
         try:
-            out = run(
+            cmd = (
                 [
+                    str(decider_bin),
+                    "--json",
+                    "--progress",
+                    "--steps",
+                    steps,
+                ]
+                if decider_bin is not None
+                else [
                     "cargo",
                     "run",
                     "-j",
@@ -115,10 +141,9 @@ def run_decider_with_retries(root: Path, steps: str, max_attempts: int = 5) -> L
                     "--progress",
                     "--steps",
                     steps,
-                ],
-                cwd=root,
-                env=env,
+                ]
             )
+            out = run(cmd, cwd=root, env=env)
             return json.loads(out)
         except BaseException as e:
             last_err = e
