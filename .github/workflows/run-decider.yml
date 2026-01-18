@@ -48,6 +48,8 @@ jobs:
         pip install -r requirements.txt || true
         
     - name: Run decider pipeline
+      id: run_decider
+      continue-on-error: true
       env:
         VRBDECODE_DECIDER_BIN: ${{ github.workspace }}/target/release/decider_evm
         VRBDECODE_HEARTBEAT_S: "30"
@@ -60,7 +62,7 @@ jobs:
         python run_icbc.py --steps ${{ github.event.inputs.steps || '32' }}
 
     - name: Diagnostics (on failure)
-      if: failure()
+      if: always()
       run: |
         echo "== free -h =="
         free -h
@@ -68,6 +70,7 @@ jobs:
         sudo dmesg | tail -n 200 || true
         
     - name: Upload artifacts
+      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: decider-artifacts
@@ -76,4 +79,9 @@ jobs:
           eval/icbc_decider_evm.csv
           eval/evm/*.sol
           eval/evm/*.calldata
+        if-no-files-found: ignore
         retention-days: 30
+
+    - name: Fail job if decider failed
+      if: steps.run_decider.outcome != 'success'
+      run: exit 1
