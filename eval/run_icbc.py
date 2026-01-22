@@ -1,6 +1,7 @@
 import csv
 import argparse
 import json
+import tempfile
 import subprocess
 import sys
 import os
@@ -162,13 +163,41 @@ def run_decider_with_retries(root: Path, steps: str, max_attempts: int = 5) -> L
     raise last_err if last_err is not None else SystemExit(1)
 
 
+def _atomic_write_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        newline="",
+        delete=False,
+        dir=str(path.parent),
+        prefix=path.name + ".tmp.",
+    ) as f:
+        tmp_path = Path(f.name)
+        f.write(text)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(str(tmp_path), str(path))
+
+
 def write_csv(path: Path, rows: List[Dict], fieldnames: List[str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8") as f:
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        newline="",
+        delete=False,
+        dir=str(path.parent),
+        prefix=path.name + ".tmp.",
+    ) as f:
+        tmp_path = Path(f.name)
         w = csv.DictWriter(f, fieldnames=fieldnames)
         w.writeheader()
         for r in rows:
             w.writerow({k: r.get(k) for k in fieldnames})
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(str(tmp_path), str(path))
 
 
 def main() -> int:
@@ -195,7 +224,7 @@ def main() -> int:
 
     eval_dir = root / "eval"
     json_path = eval_dir / "icbc_decider_evm.json"
-    json_path.write_text(json.dumps(out, indent=2), encoding="utf-8")
+    _atomic_write_text(json_path, json.dumps(out, indent=2))
 
     csv_path = eval_dir / "icbc_decider_evm.csv"
     write_csv(

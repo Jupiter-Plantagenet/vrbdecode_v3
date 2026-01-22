@@ -1,0 +1,209 @@
+\documentclass[final,5p,times]{elsarticle}
+
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{url}
+
+\journal{ICT Express}
+
+\graphicspath{{figures/}}
+
+\begin{document}
+
+\begin{frontmatter}
+
+\title{VRBDecode: Proof-Carrying Receipts for Accountable Stochastic Decoding}
+
+\author{Anonymous Submission}
+
+\begin{abstract}
+Stochastic decoding policies (temperature scaling, top-$k$, top-$p$, and randomized sampling) critically shape text generation behavior but are typically treated as non-verifiable implementation details. This makes it difficult for clients and auditors to verify whether an AI service adhered to an agreed decoding policy, randomness procedure, and output transcript.
+
+We present VRBDecode, a proof-carrying receipt protocol for accountable stochastic decoding over fixed-size candidate sets. VRBDecode defines a deterministic fixed-point decoding relation suitable for arithmetic circuits, binds per-step pseudo-randomness to public commitments, and chains step-level evidence into a tamper-evident receipt hash. For long generations, VRBDecode supports streaming proofs by folding step circuits into a single incrementally verifiable argument.
+
+Our prototype implementation uses Poseidon commitments and Nova folding. In an evaluation across candidate sizes $K\in\{16,32,64\}$ and sequence lengths $N\in\{32,64,128,256\}$ (5 repetitions), we measure per-step constraint costs, end-to-end proving time scaling, verifier time, proof size, and peak memory. Verification is sub-second in our experiments, while proof artifacts are currently large (13--84 MB depending on $K$).
+\end{abstract}
+
+\begin{keyword}
+Stochastic decoding \sep verifiable computation \sep zero-knowledge proofs \sep receipts \sep folding
+\end{keyword}
+
+\end{frontmatter}
+
+\section{Introduction}
+Large language model (LLM) deployments increasingly rely on stochastic decoding to control quality, diversity, and safety. Common policies---temperature scaling, top-$k$, and nucleus (top-$p$) sampling---are widely used to mitigate degeneration and to improve long-form behavior \cite{holtzman2020curiouscaseneuraltext}. Yet in production systems these policies are typically enforced only by implementation convention: a client receives an output transcript but cannot externally verify which policy was used, how randomness was derived, or whether any post-processing biased the sampling procedure.
+
+This accountability gap matters for settings where decoding behavior is part of a service-level agreement (SLA) or audit requirement: e.g., regulated summarization, content moderation pipelines, or multi-party workflows where downstream decisions depend on reproducible generation behavior. In such settings, a provider that deviates from the stated policy can (intentionally or accidentally) alter outcomes without leaving verifiable evidence. While anchoring receipts on-chain is a natural deployment option, our primary focus is audit-grade verification that can be performed off-chain by clients or independent auditors.
+
+We address this problem with VRBDecode, a proof-carrying receipt scheme for stochastic decoding. The key idea is to verify \emph{policy compliance conditional on a fixed candidate set} at each decoding step: given a size-$K$ set of candidate token IDs and logits, VRBDecode proves that the emitted token matches a deterministic, fully specified fixed-point decoding relation and that per-step pseudo-randomness is bound to public commitments. This does not prevent a provider from choosing an arbitrary candidate set; rather, it provides verifiable evidence of correct policy execution given whatever candidate set was used. The system produces:
+\begin{itemize}
+\item a succinct proof attesting to compliance for all steps; and
+\item a hash-chained receipt that commits to the policy, randomness commitment, candidate set digest, and outputs.
+\end{itemize}
+
+VRBDecode complements (rather than replaces) zkML systems that prove model inference: a prover may compose a forward-pass proof (to justify candidate logits) with VRBDecode (to justify decoding). Our focus is the decoding layer because it is both security-critical and comparatively lightweight to prove.
+
+Our contributions are:
+\begin{itemize}
+\item We formalize a deterministic fixed-point decoding relation for temperature scaling, sorting with a tie-break rule, top-$k$, top-$p$, and unbiased sampling over a candidate set.
+\item We design a proof-carrying receipt protocol that binds decoding policy parameters and per-step pseudo-randomness into a tamper-evident transcript.
+\item We implement streaming proofs for long generations using Nova folding and evaluate constraint costs, prover time, verifier time, proof size, and peak memory across realistic $K$ and $N$ ranges.
+\end{itemize}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{system_architecture.pdf}
+\caption{System architecture and receipt flow for VRBDecode.}
+\label{fig:system}
+\end{figure}
+
+\section{Related Work}
+VRBDecode is motivated by accountability gaps in deployed ML services. Prior cryptographic ML systems primarily prove model evaluation \cite{Delphi2020}. Recent work improves end-to-end performance for verifiable inference by optimizing compilation and proof generation \cite{ZKML2024,zkLLM2024,ZKTorch2025}. These systems target the forward pass; VRBDecode targets a distinct surface: the stochastic decoding policy and its randomness procedure. The approaches are complementary and can be composed.
+
+Efficient in-circuit hashing is central to receipt chains. Poseidon \cite{Poseidon2021} is designed for proof systems over prime fields and is widely used for constraint-efficient commitments.
+
+For long transcripts, VRBDecode relies on incremental verification. Halo \cite{Halo2019} demonstrates practical recursive proof composition without a trusted setup. Nova \cite{Nova2021} introduces folding schemes enabling efficient incremental verifiable computation (IVC), while SuperNova \cite{SuperNova2022} and HyperNova \cite{HyperNova2023} extend these ideas to more general machine models and constraint systems. VRBDecode uses Nova to fold token-by-token decoding steps while maintaining a receipt hash chain.
+
+Finally, verifiable off-chain computation and authenticated transcripts also arise in blockchain and dispute resolution settings \cite{DBLP:journals/iacr/KosbaMSWP15,DBLP:conf/ccs/ZhangCCJS16,teutsch2019scalableverificationsolutionblockchains}. VRBDecode focuses on the decoding policy surface and produces auditable artifacts that can be stored off-chain or anchored on-chain.
+
+\section{Methodology}
+\subsection{System model and threat model}
+VRBDecode involves a client, a provider that generates tokens and produces proofs, and a verifier (which may be a client, auditor, or a smart contract). We consider a malicious or faulty provider that may deviate from a stated decoding policy, bias sampling, or alter reported outputs. The verifier checks a proof that links reported outputs to public commitments and to the candidate set used at each step.
+
+Our scope is decoding over a fixed candidate set of size $K$. We do not prove that the candidate set was derived from the full vocabulary, nor do we prove the model forward pass. This design choice isolates a widely used and security-relevant layer (sampling policy compliance) that can be composed with separate mechanisms for producing or validating candidate sets.
+
+\subsection{Commitments, public inputs, and receipt chaining}
+At request time, the client and provider agree on:
+(i) a unique request identifier (\texttt{request\_id});
+(ii) a commitment to the decoding policy parameters (\texttt{policy\_hash}); and
+(iii) a commitment used to bind per-step pseudo-randomness (\texttt{seed\_commit}).
+
+The provider then generates tokens step by step. At step $t$, the provider forms a candidate set of size $K$ (token IDs and logits), deterministically computes the policy-specified distribution over the candidate set, and samples the emitted token $y_t$. VRBDecode maintains a receipt hash $h_t$ that commits to the entire transcript. A deployment may log candidate sets privately and reveal them selectively for audit; in that case, the receipt chain provides a compact commitment that auditors can re-check against the revealed transcript.
+
+Informally, each step updates:
+\begin{equation}
+h_t = \mathrm{Poseidon}(\text{domain} \,\|\, h_{t-1} \,\|\, \texttt{request\_id} \,\|\, \texttt{policy\_hash} \,\|\, \texttt{seed\_commit} \,\|\, t \,\|\, \mathrm{cand\_hash}_t \,\|\, y_t \,\|\, W_s \,\|\, R).
+\end{equation}
+Here \(\mathrm{cand\_hash}_t\) is a Poseidon digest of the sorted candidate set for step $t$, \(W_s\) is the summed weight of the top-$p$ prefix, and \(R\) is the sampling threshold used in the unbiased selection rule.
+
+Figure~\ref{fig:system} summarizes the roles and artifacts.
+
+\subsection{Per-step pseudo-randomness binding}
+VRBDecode binds per-step pseudo-randomness to public commitments to prevent substitution of randomness after the fact. In our implementation, a per-step 64-bit value $U_t$ is derived inside the circuit via a domain-separated Poseidon hash over \texttt{request\_id}, \texttt{policy\_hash}, \texttt{seed\_commit}, and the step index $t$. The proof enforces that the sampled token is consistent with the derived $U_t$ and the deterministic decoding relation.
+
+\subsection{Security discussion (informal)}
+We summarize VRBDecode's security goal and assumptions informally. Let the public inputs include \texttt{policy\_hash}, \texttt{seed\_commit}, and the final receipt \(h_T\). The prover's witness includes the per-step candidate sets, intermediate decoding values, and the emitted tokens \(y_t\).
+
+\textbf{Guarantee (soundness-based).} Assuming the soundness of the underlying proof system (Nova folding and its commitment scheme) and collision resistance of Poseidon for receipt hashing, if the verifier accepts then there exists a sequence of candidate sets and per-step states such that:
+(i) each emitted token \(y_t\) equals the output of the deterministic DecodingSpec pipeline applied to the step's candidate set and the committed policy parameters;
+(ii) the per-step pseudo-random values \(U_t\) are derived as specified from the committed context; and
+(iii) the receipt chain updates are computed consistently, so \(h_T\) commits to the full transcript.
+
+\textbf{Tamper evidence.} Any attempt to claim a different policy, randomness commitment, step index, or output token while keeping the same receipt value would require either breaking proof soundness or finding a Poseidon collision across receipt updates.
+
+\textbf{Out-of-scope.} VRBDecode does not prevent a provider from choosing an arbitrary candidate set; it provides policy-compliance evidence conditional on that set. Proving that the candidate set matches the model's full-vocabulary distribution is complementary work.
+
+\subsection{Deterministic decoding relation over a candidate set}
+The core technical challenge in proving decoding is eliminating ambiguity: floating-point operations, sorting ties, and sampling modulo bias can lead to implementation differences. VRBDecode therefore specifies a deterministic fixed-point decoding relation.
+
+Each step consumes a candidate set of size $K$ consisting of token identifiers and logits. Logits are represented as signed Q16.16 integers. Temperature scaling uses a fixed rounding rule. Candidates are sorted by scaled logit in descending order, with ties broken by ascending token identifier. The relation applies top-$k$ filtering by restricting to the first \(k\) candidates after sorting.
+
+To implement nucleus sampling within top-$k$, the relation computes approximate exponent weights in fixed-point, forms a cumulative sum, and selects the minimal prefix reaching a fixed-point threshold corresponding to top-$p$. Sampling uses an unbiased multiply-high rule: letting \(U_t\) be a 64-bit pseudo-random value and \(W_s\) be the total weight of the retained prefix, the sampler computes \(R=\mathrm{high64}(U_t\cdot W_s)\) and selects the first prefix whose cumulative weight exceeds \(R\).
+
+\subsection{Fixed-point exponentiation approximation}
+The decoding relation requires exponentiation to compute unnormalized weights. We use a deterministic approximation designed to be efficient in circuits and consistent across implementations. Let \(z_i\) be the stabilized logit difference after temperature scaling, where \(z_i\le 0\). We clamp \(z_i\) to a fixed minimum (\(-12.0\)) and decompose \(z_i\) into an integer part and a remainder: \(z_i = -(n) + r\), where \(n\in\{0,\dots,12\}\) and \(r\in[-1,0]\) in Q16.16.
+
+We compute \(\exp(z_i)\) as a product of:
+(i) a precomputed lookup constant \(E[n]\approx \exp(-n)\) in Q30; and
+(ii) a 5th-order polynomial approximation to \(\exp(r)\) on \([-1,0]\): \(P(r)=1+r+r^2/2+r^3/6+r^4/24+r^5/120\), evaluated in fixed-point with flooring rules.
+
+The per-step weight is \(w_i = \lfloor E[n]\cdot P(r) / 2^{30} \rfloor\) (Q30), and weights are summed to form \(W_k\) and the nucleus threshold \(\lfloor \mathrm{top\_p}\cdot W_k \rfloor\). This method is fully specified and testable, trading floating-point fidelity for deterministic reproducibility.
+
+\subsection{Correctness and tamper-detection tests}
+\label{subsec:correctness_tests}
+To support reproducibility and to reduce specification ambiguity, VRBDecode is accompanied by a compliance test suite for the deterministic decoding relation. We use:
+\begin{itemize}
+\item a golden vector set (50 cases) covering edge conditions (ties, extreme temperatures, and boundary values for top-$k$ and top-$p$);
+\item a randomized equivalence suite (1000 cases) comparing against a reference implementation; and
+\item negative tamper tests demonstrating that changes to policy parameters, per-step randomness, or the claimed output token lead to mismatches in the derived decoding outputs (and therefore would be rejected by the proof/receipt verification).
+\end{itemize}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{decoding_pipeline.pdf}
+\caption{Deterministic decoding pipeline (fixed-point scaling, sorting, top-$k$, top-$p$, unbiased sampling) and where the proof binds.}
+\label{fig:decoding}
+\end{figure}
+
+\subsection{Streaming proof construction via folding}
+Long generations require amortization across many steps. VRBDecode uses Nova \cite{Nova2021} to fold a sequence of per-step relations into a single IVC proof. We implement two relations: \texttt{StepCircuit} is a per-step R1CS circuit that enforces decoding, pseudo-randomness derivation, and receipt updates; \texttt{StepFCircuit} is a Nova-compatible step relation that supports folding while maintaining a compact folded state whose primary evolving component is the receipt hash.
+
+\subsection{Implementation}
+Our prototype is implemented in Rust over the BN254 scalar field using arkworks. Poseidon \cite{Poseidon2021} is instantiated over this field for the per-step PRF and receipt updates. The Nova construction is instantiated using the Sonobe folding-schemes library.
+
+\section{Results and Discussion}
+\subsection{Experimental setup}
+We evaluate across candidate set sizes $K\in\{16,32,64\}$ and sequence lengths $N\in\{32,64,128,256\}$. All results report 5 repetitions. We measure constraint counts for per-step circuits, circuit generation time, Nova preprocessing time, average proving time per step, end-to-end folding time, verifier time, proof size, and peak resident set size (RSS).
+
+Benchmarks were run on Linux (Ubuntu 22.04) on an Intel Core i9-10940X CPU with 125~GiB RAM using optimized release builds.
+
+For constraint benchmarking (Figure~\ref{fig:constraints} and the first part of Table~\ref{tab:table1}), we instantiate a synthetic candidate set and choose a simple ``worst-case'' policy configuration with \(\mathrm{top\_k}=K\), \(\mathrm{top\_p}=1.0\), and \(T=1.0\) to exercise all pipeline components.
+
+For Nova folding benchmarks (Figures~\ref{fig:provertime} and \ref{fig:memory} and the second part of Table~\ref{tab:table1}), we use a pre-generated test vector suite (golden plus randomized vectors) that provides candidate sets and policy parameters per step; we then fold the first $N$ vectors for each $K$. To isolate proving costs, we set request and commitment fields to fixed values in the benchmark harness; this does not change the circuit structure and still exercises the in-circuit hashing for per-step pseudo-randomness and receipt updates.
+
+\subsection{Constraint costs and synthesis overhead}
+\input{table1.tex}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{constraints_vs_k.pdf}
+\caption{Constraint scaling with candidate set size $K$.}
+\label{fig:constraints}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{nova_avg_step_time_vs_n.pdf}
+\caption{Average proving time per step versus number of steps $N$.}
+\label{fig:provertime}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{nova_peak_rss_vs_n.pdf}
+\caption{Peak memory usage versus number of steps $N$.}
+\label{fig:memory}
+\end{figure}
+
+Figure~\ref{fig:constraints} shows constraint scaling with $K$. For $K=64$, our per-step decoding circuit requires 880{,}232 constraints and the Nova-compatible step relation requires 607{,}120 constraints (Table~\ref{tab:table1}). This growth reflects the costs of sorting with deterministic tie-breaking, hashing the candidate set, and enforcing unbiased sampling.
+
+In addition to performance, we validated functional correctness of the deterministic decoding relation using the compliance tests described in Section~\ref{subsec:correctness_tests}, including golden vectors, randomized equivalence against a reference implementation, and negative tamper tests for policy/randomness/output changes.
+
+\subsection{End-to-end proving time, verifier time, proof size, and memory}
+Figures~\ref{fig:provertime} and \ref{fig:memory} summarize scaling with the number of folded steps $N$. For $K=16$, average proving time is approximately 2.5~s per step across $N\in\{32,64,128,256\}$, and peak RSS stays below 0.5~GiB. For $K=32$, proving time is approximately 4.6~s per step with peak RSS below 0.75~GiB. For $K=64$, proving time rises to roughly 16--17~s per step with peak RSS around 1.6~GiB.
+
+Verification remains sub-second across configurations (Table~\ref{tab:table1}), suggesting that proofs can be checked efficiently by clients or auditors even when proving is expensive.
+
+\textbf{Proof size scaling.} In our implementation, proof size is effectively independent of $N$ for a fixed $K$ because Nova folding produces a constant-size IVC proof whose size does not grow with the number of folded steps. However, proof size grows substantially with $K$ because increasing $K$ increases the per-step circuit size, which increases the size of the committed R1CS instances and associated proof artifacts under our chosen commitment scheme and serialization.
+
+\textbf{Compression and packaging strategies.} Reducing proof size is an important engineering step for deployment. Promising directions include: (i) wrapping the final folded proof in a succinct SNARK to compress proof artifacts into a small constant number of group elements; (ii) optimizing commitment parameters and proof encodings to avoid redundant elements; and (iii) treating \(h_T\) as the primary on-chain artifact while storing the full proof off-chain with content-addressed references.
+
+\subsection{Deployment discussion}
+The measured proving costs (2.5--17 s/step) make interactive, real-time proof generation challenging for long generations. We therefore view the most immediate deployment scenario as \emph{batch or post-hoc auditing}: a provider serves responses normally, then generates proofs asynchronously for transcripts selected by policy, sampling, or dispute triggers. In this regime, sub-second verification still enables lightweight third-party checking, while proof generation can be provisioned on dedicated hardware.
+
+\subsection{Limitations}
+VRBDecode provides verifiability for the decoding layer, but it does not by itself guarantee that the candidate set corresponds to the full-vocabulary model distribution. Proving the forward pass (or proving a correct top-$K$ extraction from the full vocabulary) is complementary future work that can be composed with VRBDecode.
+
+Our implementation uses a fixed-point approximation of exponentiation to make the decoding relation circuit-friendly. While the approximation is deterministic and testable, it differs from standard floating-point implementations; thus VRBDecode is best viewed as enabling \emph{policy compliance with respect to a public, precise specification} rather than compliance with an informal floating-point reference.
+
+\section{Conclusion}
+We presented VRBDecode, a proof-carrying receipt protocol for accountable stochastic decoding over fixed-size candidate sets. VRBDecode binds policy parameters and per-step pseudo-randomness into a tamper-evident receipt hash and supports streaming proofs for long generations via Nova folding. Our prototype demonstrates feasibility across candidate sizes up to $K=64$ and sequence lengths up to 256 steps, with sub-second verification and measurable scaling in proving time and memory.
+
+We view VRBDecode as a building block for audit-grade AI services: it makes decoding behavior externally verifiable and composable with emerging systems for verifiable inference.
+
+\bibliographystyle{elsarticle-num}
+\bibliography{refs}
+
+\end{document}

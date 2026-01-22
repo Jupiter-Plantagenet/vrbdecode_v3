@@ -1,0 +1,46 @@
+\begin{table}[t]
+\centering
+\caption{Constraint counts and performance for verifiable decoding and folding.}
+\label{tab:table1}
+\small
+\begin{tabular}{@{}rrrrr@{}}
+\toprule
+$K$ & StepCircuit (constraints) & Gen(s) & StepFCircuit (constraints) & Gen(s)\\
+\midrule
+16 & 122,452 & 0.0829 & 54,236 & 0.0507\\
+32 & 306,288 & 0.2208 & 169,752 & 0.1171\\
+64 & 880,232 & 0.4640 & 607,120 & 0.3520\\
+\bottomrule
+\end{tabular}
+
+\vspace{2mm}
+\begin{tabular}{@{}rr@{}}
+\toprule
+$K$ & Preprocess(s)\\
+\midrule
+16 & 4.2594\\
+32 & 7.0391\\
+64 & 23.7664\\
+\bottomrule
+\end{tabular}
+
+\vspace{2mm}
+\begin{tabular}{@{}rrrrrr@{}}
+\toprule
+$K$ & Steps & Avg step(s) & Total(s) & Verify(s) & Size(bytes)\\
+\midrule
+16 & 32 & 2.5065 & 80.2075 & 0.1678 & 13,515,928\\
+16 & 64 & 2.5480 & 163.0694 & 0.1410 & 13,515,928\\
+16 & 128 & 2.5575 & 327.3587 & 0.1647 & 13,515,928\\
+16 & 256 & 2.5631 & 656.1574 & 0.1588 & 13,515,928\\
+32 & 32 & 4.5892 & 146.8557 & 0.2621 & 28,297,880\\
+32 & 64 & 4.5883 & 293.6528 & 0.2581 & 28,297,880\\
+32 & 128 & 4.6693 & 597.6750 & 0.2104 & 28,297,880\\
+32 & 256 & 4.6530 & 1191.1676 & 0.2342 & 28,297,880\\
+64 & 32 & 16.3128 & 522.0112 & 0.6782 & 84,272,792\\
+64 & 64 & 16.4933 & 1055.5734 & 0.5752 & 84,272,792\\
+64 & 128 & 16.7118 & 2139.1090 & 0.6445 & 84,272,792\\
+64 & 256 & 16.8266 & 4307.6000 & 0.6047 & 84,272,792\\
+\bottomrule
+\end{tabular}
+\end{table}
