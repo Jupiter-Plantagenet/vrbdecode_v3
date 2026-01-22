@@ -1,0 +1,49 @@
+This is BibTeX, Version 0.99d (TeX Live 2022/dev/Debian)
+Capacity: max_strings=200000, hash_size=200000, hash_prime=170003
+The top-level auxiliary file: main.aux
+The style file: elsarticle-num.bst
+Database file #1: refs.bib
+Warning--empty pages in Delphi2020
+Warning--empty pages in Poseidon2021
+You've used 13 entries,
+            2952 wiz_defined-function locations,
+            760 strings with 8251 characters,
+and the built_in function-call counts, 4148 in all, are:
+= -- 372
+> -- 154
+< -- 2
++ -- 60
+- -- 47
+* -- 296
+:= -- 572
+add.period$ -- 19
+call.type$ -- 13
+change.case$ -- 13
+chr.to.int$ -- 0
+cite$ -- 15
+duplicate$ -- 154
+empty$ -- 498
+format.name$ -- 60
+if$ -- 1093
+int.to.chr$ -- 0
+int.to.str$ -- 13
+missing$ -- 5
+newline$ -- 66
+num.names$ -- 13
+pop$ -- 136
+preamble$ -- 1
+purify$ -- 0
+quote$ -- 0
+skip$ -- 249
+stack$ -- 0
+substring$ -- 73
+swap$ -- 52
+text.length$ -- 2
+text.prefix$ -- 0
+top$ -- 0
+type$ -- 0
+warning$ -- 2
+while$ -- 20
+width$ -- 15
+write$ -- 133
+(There were 2 warnings)

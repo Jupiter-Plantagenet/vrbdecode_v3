@@ -1,0 +1,100 @@
+\begin{thebibliography}{10}
+\expandafter\ifx\csname url\endcsname\relax
+  \def\url#1{\texttt{#1}}\fi
+\expandafter\ifx\csname urlprefix\endcsname\relax\def\urlprefix{URL }\fi
+\expandafter\ifx\csname href\endcsname\relax
+  \def\href#1#2{#2} \def\path#1{#1}\fi
+
+\bibitem{holtzman2020curiouscaseneuraltext}
+A.~Holtzman, J.~Buys, L.~Du, M.~Forbes, Y.~Choi,
+  \href{https://arxiv.org/abs/1904.09751}{The curious case of neural text
+  degeneration} (2020).
+\newblock \href {http://arxiv.org/abs/1904.09751} {\path{arXiv:1904.09751}}.
+\newline\urlprefix\url{https://arxiv.org/abs/1904.09751}
+
+\bibitem{Delphi2020}
+P.~Mishra, R.~Lehmkuhl, A.~Srinivasan, W.~Zheng, R.~A. Popa,
+  \href{https://www.usenix.org/conference/usenixsecurity20/presentation/mishra}{Delphi:
+  A cryptographic inference service for neural networks}, in: 29th {USENIX}
+  Security Symposium ({USENIX} Security 20), 2020.
+\newline\urlprefix\url{https://www.usenix.org/conference/usenixsecurity20/presentation/mishra}
+
+\bibitem{ZKML2024}
+B.~Chen, S.~Waiwitlikhit, I.~Stoica, D.~Kang,
+  \href{https://doi.org/10.1145/3627703.3650088}{{ZKML:} an optimizing system
+  for {ML} inference in zero-knowledge proofs}, in: Proceedings of the
+  Nineteenth European Conference on Computer Systems, EuroSys 2024, Athens,
+  Greece, April 22-25, 2024, ACM, 2024, pp. 560--574.
+\newblock \href {https://doi.org/10.1145/3627703.3650088}
+  {\path{doi:10.1145/3627703.3650088}}.
+\newline\urlprefix\url{https://doi.org/10.1145/3627703.3650088}
+
+\bibitem{zkLLM2024}
+H.~Sun, J.~Li, H.~Zhang, \href{https://arxiv.org/abs/2404.16109}{zkllm: Zero
+  knowledge proofs for large language models} (2024).
+\newblock \href {http://arxiv.org/abs/2404.16109} {\path{arXiv:2404.16109}}.
+\newline\urlprefix\url{https://arxiv.org/abs/2404.16109}
+
+\bibitem{ZKTorch2025}
+B.-J. Chen, L.~Tang, D.~Kang, \href{https://arxiv.org/abs/2507.07031}{Zktorch:
+  Compiling ml inference to zero-knowledge proofs via parallel proof
+  accumulation} (2025).
+\newblock \href {http://arxiv.org/abs/2507.07031} {\path{arXiv:2507.07031}}.
+\newline\urlprefix\url{https://arxiv.org/abs/2507.07031}
+
+\bibitem{Poseidon2021}
+L.~Grassi, D.~Khovratovich, C.~Rechberger, A.~Roy, M.~Schofnegger,
+  \href{https://www.usenix.org/conference/usenixsecurity21/presentation/grassi}{Poseidon:
+  A new hash function for {Zero-Knowledge} proof systems}, in: 30th {USENIX}
+  Security Symposium ({USENIX} Security 21), 2021.
+\newline\urlprefix\url{https://www.usenix.org/conference/usenixsecurity21/presentation/grassi}
+
+\bibitem{Halo2019}
+S.~Bowe, J.~Grigg, D.~Hopwood,
+  \href{https://eprint.iacr.org/2019/1021}{Recursive proof composition without
+  a trusted setup}, Cryptology {ePrint} Archive, Paper 2019/1021 (2019).
+\newline\urlprefix\url{https://eprint.iacr.org/2019/1021}
+
+\bibitem{Nova2021}
+A.~Kothapalli, S.~Setty, I.~Tzialla,
+  \href{https://eprint.iacr.org/2021/370}{Nova: Recursive zero-knowledge
+  arguments from folding schemes}, Cryptology {ePrint} Archive, Paper 2021/370
+  (2021).
+\newline\urlprefix\url{https://eprint.iacr.org/2021/370}
+
+\bibitem{SuperNova2022}
+A.~Kothapalli, S.~Setty, \href{https://eprint.iacr.org/2022/1758}{{SuperNova}:
+  Proving universal machine executions without universal circuits}, Cryptology
+  {ePrint} Archive, Paper 2022/1758 (2022).
+\newline\urlprefix\url{https://eprint.iacr.org/2022/1758}
+
+\bibitem{HyperNova2023}
+A.~Kothapalli, S.~Setty, \href{https://eprint.iacr.org/2023/573}{{HyperNova}:
+  Recursive arguments for customizable constraint systems}, Cryptology {ePrint}
+  Archive, Paper 2023/573 (2023).
+\newline\urlprefix\url{https://eprint.iacr.org/2023/573}
+
+\bibitem{DBLP:journals/iacr/KosbaMSWP15}
+A.~E. Kosba, A.~Miller, E.~Shi, Z.~Wen, C.~Papamanthou,
+  \href{http://eprint.iacr.org/2015/675}{Hawk: The blockchain model of
+  cryptography and privacy-preserving smart contracts}, {IACR} Cryptol. ePrint
+  Arch. (2015) 675.
+\newline\urlprefix\url{http://eprint.iacr.org/2015/675}
+
+\bibitem{DBLP:conf/ccs/ZhangCCJS16}
+F.~Zhang, E.~Cecchetti, K.~Croman, A.~Juels, E.~Shi,
+  \href{https://doi.org/10.1145/2976749.2978326}{Town crier: An authenticated
+  data feed for smart contracts}, in: Proceedings of the 2016 {ACM} {SIGSAC}
+  Conference on Computer and Communications Security, Vienna, Austria, October
+  24-28, 2016, {ACM}, 2016, pp. 270--282.
+\newblock \href {https://doi.org/10.1145/2976749.2978326}
+  {\path{doi:10.1145/2976749.2978326}}.
+\newline\urlprefix\url{https://doi.org/10.1145/2976749.2978326}
+
+\bibitem{teutsch2019scalableverificationsolutionblockchains}
+J.~Teutsch, C.~Reitwie{\ss}ner, \href{https://arxiv.org/abs/1908.04756}{A
+  scalable verification solution for blockchains} (2019).
+\newblock \href {http://arxiv.org/abs/1908.04756} {\path{arXiv:1908.04756}}.
+\newline\urlprefix\url{https://arxiv.org/abs/1908.04756}
+
+\end{thebibliography}
